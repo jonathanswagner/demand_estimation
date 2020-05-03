@@ -1,0 +1,137 @@
+---
+title: "Project1R"
+author: "Shunichi Araki, Nicholas David Gabriele, David Raj, Jonathan Simon Wagner"
+output: html_document
+---
+
+Load data and perform basic cleaning tasks:
+
+```{r}
+setwd("C:/Users/sirsl/OneDrive - National University of Singapore/NUS MSBA/Semester 1/DSC5101/Assignments/Econ Assignment 1/")
+data.df <- read.csv('Project1Data.csv')
+data.df <- subset(data.df, data.df$mean_net_ticket_price < 4000)  # Exclude unrealistic outliers
+data.df$num_bookings <-  log(data.df$num_bookings)  # Perform log transform of quantity
+data.df$mean_net_ticket_price <-  log(data.df$mean_net_ticket_price)  # Perform log transform of price
+data.df <- data.df[order(-data.df[, 3]), ]  # Sort by decreasing mean ticket price
+
+head(data.df)  # Display first 6 rows
+```
+
+Create the main reduced form model:
+
+```{r}
+price.reduced.form <- lm(mean_net_ticket_price ~ inv, data = data.df)  # Regress IV on endogenous variable
+data.df$predicted_price <- predict(price.reduced.form, newx = X)  # Store predicted values to dataframe
+data.df$dtd_band <- cut(data.df$dtd, breaks = c(-1, 5, 40, Inf), labels = FALSE)  # Band using specified cuts
+
+summary(price.reduced.form)  # Display summary of model parameters and statistics
+```
+
+Create segmented reduced form models:
+
+```{r}
+data.df1 <- subset(data.df, data.df$dtd_band == 1)  # Divide dataset into 3 groups by band
+data.df2 <- subset(data.df, data.df$dtd_band == 2)
+data.df3 <- subset(data.df, data.df$dtd_band == 3)
+
+price.reduced.form.short <- lm(mean_net_ticket_price ~ inv, data.df1)  # Regress IV on endogenous variable
+price.reduced.form.medium <- lm(mean_net_ticket_price ~ inv, data.df2)
+price.reduced.form.long <- lm(mean_net_ticket_price ~ inv, data.df3)
+
+data.df1$predicted_price <- predict(price.reduced.form.short, newx = X)  # Store predicted values to dataframe
+data.df2$predicted_price <- predict(price.reduced.form.medium, newx = X)
+data.df3$predicted_price <- predict(price.reduced.form.long, newx = X)
+
+summary(price.reduced.form.short)  # Display summary of model parameters and statistics
+summary(price.reduced.form.medium)
+summary(price.reduced.form.long)
+```
+
+Create main model OLS (for comparison purposes only):
+
+```{r}
+structural.form <- lm(num_bookings ~ mean_net_ticket_price, data.df)  # Regress price on quantity
+
+summary(structural.form)  # Display summary of model parameters and statistics
+```
+
+Create segmented OLS equations (for comparison purposes only):
+
+```{r}
+structural.form.short <- lm(num_bookings ~ mean_net_ticket_price, data.df1)  # Regress price on quantity
+structural.form.medium <- lm(num_bookings ~ mean_net_ticket_price, data.df2)
+structural.form.long <- lm(num_bookings ~ mean_net_ticket_price, data.df3)
+
+summary(structural.form.short)  # Display summary of model parameters and statistics
+summary(structural.form.medium)
+summary(structural.form.long)
+```
+
+Create main model structural equation:
+
+```{r}
+struc.2sls.form <- lm(num_bookings ~ predicted_price, data = data.df)
+
+summary(struc.2sls.form)  # Display summary of model parameters and statistics
+```
+
+Create segmented model structural equations:
+
+```{r}
+struc.short.2sls.form <- lm(num_bookings ~ predicted_price, data.df1)
+struc.medium.2sls.form <- lm(num_bookings ~ predicted_price, data.df2)
+struc.long.2sls.form <- lm(num_bookings ~ predicted_price, data.df3)
+
+summary(struc.short.2sls.form)  # Display summary of model parameters and statistics
+summary(struc.medium.2sls.form)
+summary(struc.long.2sls.form)
+```
+
+Create 2SLS main model from built-in R packages with hypothesis tests:
+
+```{r}
+library(AER)
+library(zoo)
+
+direct.2sls.form <- ivreg(num_bookings ~ mean_net_ticket_price | inv, data = data.df)
+
+summary(direct.2sls.form, diagnostics = TRUE)  # Display summary of model parameters and statistics
+```
+
+Create 2SLS segmented models from built-in R packages with hypothesis tests:
+
+```{r}
+direct.short.2sls.form = ivreg(num_bookings ~ mean_net_ticket_price | inv, data = data.df1)
+direct.medium.2sls.form = ivreg(num_bookings ~ mean_net_ticket_price | inv, data = data.df2)
+direct.long.2sls.form = ivreg(num_bookings ~ mean_net_ticket_price | inv, data = data.df3)
+
+summary(direct.short.2sls.form, diagnostics = TRUE)  # Display summary of model parameters and statistics
+summary(direct.medium.2sls.form, diagnostics = TRUE)
+summary(direct.long.2sls.form, diagnostics = TRUE)
+```
+
+Understand covariance between variables using data visualization:
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+data.df[c(1:4)] %>%  # Look at each variable's distribution versus target
+  gather(-mean_net_ticket_price, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = mean_net_ticket_price, color = mean_net_ticket_price)) +
+	geom_point() +
+  scale_y_log10() +  # Apply log transformation
+	facet_wrap(~ var, scales = "free") +
+	theme_bw()
+```
+
+Examine distribution of price among chosen segments:
+
+```{r}
+data.df$dtd_band <- cut(data.df$dtd, breaks = c(-1, 5, 40, Inf))  # Banding using specified cuts
+
+# Box plot of variable by class
+ggplot(data = data.df, aes(x = dtd_band, y = mean_net_ticket_price, fill = dtd_band)) +
+  geom_boxplot(alpha = 0.5) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
